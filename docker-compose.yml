@@ -1,0 +1,49 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:16
+    container_name: lab08-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: dagster
+      POSTGRES_PASSWORD: dagster
+      POSTGRES_DB: dagster
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  dagster:
+    image: python:3.11-slim
+    container_name: lab08-dagster
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      PYTHONPATH: /opt/dagster/dags
+    depends_on:
+      - postgres
+    volumes:
+      - ./dags:/opt/dagster/dags
+      - dagster_home:/opt/dagster/dagster_home
+      - ./workspace.yaml:/opt/dagster/dags/workspace.yaml
+    command: >
+      bash -c "
+        pip install --no-cache-dir dagster dagster-postgres dagster-aws pandas dagster-webserver &&
+        dagster dev -w /opt/dagster/dags/workspace.yaml -h 0.0.0.0 -p 3000
+      "
+
+  streamlit:
+    image: python:3.11-slim
+    container_name: lab08-streamlit
+    restart: unless-stopped
+    ports:
+      - "8501:8501"
+    volumes:
+      - ./streamlit:/app
+      - dagster_home:/data
+    working_dir: /app
+    command: bash -c "pip install --no-cache-dir streamlit pandas plotly && streamlit run app.py --server.port=8501 --server.address=0.0.0.0"
+
+volumes:
+  postgres_data:
+  dagster_home:
