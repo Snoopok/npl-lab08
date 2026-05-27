@@ -180,7 +180,8 @@ def fact_promo_analysis():
     
     # Приводим promo_code_id к int (убираем .0)
     transactions['promo_code_id'] = transactions['promo_code_id'].astype('Int64')
-    
+    promos['promo_code_id'] = promos['promo_code_id'].astype('Int64')
+
     promo_stats = transactions[transactions['promo_code_id'].notna()].groupby('promo_code_id').agg({
         'transaction_id': 'count',
         'amount': 'sum'
