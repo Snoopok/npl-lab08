@@ -1,4 +1,4 @@
-from dagster import Definitions, asset, define_asset_job
+from dagster import Definitions, asset, define_asset_job, ScheduleDefinition
 import pandas as pd
 import boto3
 from botocore import UNSIGNED
@@ -6,6 +6,7 @@ from botocore.config import Config
 from io import StringIO
 from sqlalchemy import create_engine
 from datetime import datetime, timedelta
+import numpy as np
 
 S3_BUCKET = "npl-de18-lab8-data"
 PG_URL = "postgresql://dagster:dagster@postgres:5432/dagster"
@@ -16,22 +17,52 @@ def read_s3_jsonl(key):
     obj = s3.get_object(Bucket=S3_BUCKET, Key=key)
     return pd.read_json(StringIO(obj['Body'].read().decode('utf-8')), lines=True)
 
-def get_yesterday():
-    return (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
+def get_date_range():
+    # С 27 апреля
+    start_date = datetime.now() - timedelta(days=14)
+    end_date = datetime.now()
+    dates = []
+    current = start_date
+    while current <= end_date:
+        dates.append(current.strftime("%Y-%m-%d"))
+        current += timedelta(days=1)
+    return dates
 
 @asset
 def raw_transactions_s3():
-    key = f"day={get_yesterday()}/slot=09-30/transactions.jsonl"
-    df = read_s3_jsonl(key)
     engine = create_engine(PG_URL)
+    all_data = []
+    
+    # Все 10-минутные слоты (144 слота в день)
+    slots = [f"{h:02d}-{m:02d}" for h in range(24) for m in range(0, 60, 10)]
+    
+    for date in get_date_range():
+        for slot in slots:
+            key = f"day={date}/slot={slot}/transactions.jsonl"
+            try:
+                df = read_s3_jsonl(key)
+                all_data.append(df)
+            except:
+                pass  # если файла нет — пропускаем
+    
+    df = pd.concat(all_data, ignore_index=True)
     df.to_sql("raw_transactions_s3", engine, if_exists="replace", index=False)
     return df
 
 @asset
 def raw_cancellations_s3():
-    key = f"cancellations/day={get_yesterday()}/cancellations.jsonl"
-    df = read_s3_jsonl(key)
     engine = create_engine(PG_URL)
+    all_data = []
+    
+    for date in get_date_range():
+        key = f"cancellations/day={date}/cancellations.jsonl"
+        try:
+            df = read_s3_jsonl(key)
+            all_data.append(df)
+        except:
+            pass  # если файла нет — пропускаем
+    
+    df = pd.concat(all_data, ignore_index=True)
     df.to_sql("raw_cancellations_s3", engine, if_exists="replace", index=False)
     return df
 
@@ -67,7 +98,17 @@ def fact_transactions_clean():
     # 3. Несуществующие user_id → пометить
     valid_users = set(users['user_id'].tolist())
     transactions['user_valid'] = transactions['user_id'].isin(valid_users)
-    
+   
+    # === ТЕСТОВЫЕ ПОЛЬЗОВАТЕЛИ (20% в рабочие дни) ===
+    users = pd.read_sql("SELECT * FROM ref_users_s3", engine)
+    np.random.seed(42)
+    users['is_test_user'] = np.random.choice([True, False], size=len(users), p=[0.1, 0.9])
+    test_users = set(users[users['is_test_user'] == True]['user_id'].tolist())
+    transactions['is_test_user'] = transactions['user_id'].isin(test_users)
+
+    # Отфильтровать тестовых пользователей (оставить только реальных)
+    transactions = transactions[transactions['is_test_user'] == False]
+
     # 4. Нулевые суммы → пометить
     transactions['amount_zero'] = transactions['amount'] == 0
     
@@ -148,9 +189,17 @@ def fact_promo_analysis():
     promo_stats.to_sql("fact_promo_analysis", engine, if_exists="replace", index=False)
     return promo_stats
 
+ingest_job = define_asset_job("ingest_s3_data", selection="*")
+
+ingest_schedule = ScheduleDefinition(
+    job=ingest_job,
+    cron_schedule="*/10 * * * *",  # Каждые 10 минут
+    name="ingest_s3_data_schedule"
+)
+
 defs = Definitions(
-    assets=[raw_transactions_s3, raw_cancellations_s3, ref_users_s3, ref_promo_codes_s3, 
-            fact_transactions_clean, fact_cancellations_clean,
-            fact_hourly_stats, fact_daily_revenue, fact_promo_analysis],
-    jobs=[define_asset_job("ingest_s3_data")],
+    assets=[raw_transactions_s3, raw_cancellations_s3, ref_users_s3, ref_promo_codes_s3, \
+            fact_transactions_clean, fact_cancellations_clean],
+    jobs=[ingest_job],
+    schedules=[ingest_schedule]
 )

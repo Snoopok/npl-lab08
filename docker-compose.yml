@@ -42,7 +42,7 @@ services:
       - ./streamlit:/app
       - dagster_home:/data
     working_dir: /app
-    command: bash -c "pip install --no-cache-dir streamlit pandas plotly && streamlit run app.py --server.port=8501 --server.address=0.0.0.0"
+    command: bash -c "pip install --no-cache-dir streamlit pandas plotly sqlalchemy psycopg2-binary && streamlit run app.py --server.port=8501 --server.address=0.0.0.0"
 
 volumes:
   postgres_data:
