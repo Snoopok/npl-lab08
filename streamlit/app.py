@@ -43,7 +43,7 @@ st.caption("Ось X — час суток (0 = 00:00–01:00, 1 = 01:00–02:00
 fig1 = px.bar(hourly, x='hour', y='transaction_count', 
               title="Transactions by Hour",
               labels={'hour': 'Час суток', 'transaction_count': 'Количество транзакций'})
-st.plotly_chart(fig1, use_container_width=True)
+st.plotly_chart(fig1, use_container_width='stretch')
 
 # === 2. КОЛИЧЕСТВО ПОКУПОК ПО ЧАСАМ ===
 st.subheader("2. Количество покупок по часам (purchase + completed)")
@@ -53,7 +53,7 @@ purchase_df['hour'] = purchase_df['created_at_dt'].dt.hour
 fig2 = px.pie(purchase_df, names='hour', 
               title="Purchases by Hour",
               labels={'hour': 'Час'})
-st.plotly_chart(fig2, use_container_width=True)
+st.plotly_chart(fig2, use_container_width='stretch')
 
 # === 3. ВЫРУЧКА ПО ДНЯМ ===
 st.subheader("3. Выручка по дням (базовая валюта TGRK)")
@@ -61,12 +61,14 @@ st.caption("Ось X — дата. Ось Y — общая выручка за �
 fig3 = px.line(daily, x='date', y='total_amount', 
                title="Daily Revenue",
                labels={'date': 'Дата', 'total_amount': 'Выручка (TGRK)'})
-st.plotly_chart(fig3, use_container_width=True)
+st.plotly_chart(fig3, use_container_width='stretch')
 
 # === 4. АНАЛИЗ ПРОМОКОДОВ ===
 st.subheader("4. Анализ промокодов (usage vs limits)")
 st.caption("usage_count = сколько раз использовали промокод. total_amount = сумма транзакций с этим промокодом.")
-st.dataframe(promo[['promo_code_id', 'usage_count', 'total_amount']], use_container_width=True)
-
+if not promo.empty:
+    st.dataframe(promo[['promo_code_id', 'usage_count', 'total_amount']], use_container_width='stretch')
+else:
+    st.info("Промокоды не использовались в последние 2 недели")
 st.markdown("---")
 st.caption("Данные обновляются автоматически через Dagster (scheduled job каждые 10 минут)")
