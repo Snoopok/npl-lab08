@@ -178,14 +178,15 @@ def fact_promo_analysis():
     transactions = pd.read_sql("SELECT * FROM fact_transactions_clean", engine)
     promos = pd.read_sql("SELECT * FROM ref_promo_codes_s3", engine)
     
+    # Приводим promo_code_id к int (убираем .0)
+    transactions['promo_code_id'] = transactions['promo_code_id'].astype('Int64')
+    
     promo_stats = transactions[transactions['promo_code_id'].notna()].groupby('promo_code_id').agg({
         'transaction_id': 'count',
         'amount': 'sum'
     }).reset_index()
     promo_stats.columns = ['promo_code_id', 'usage_count', 'total_amount']
-    
     promo_stats = promo_stats.merge(promos, on='promo_code_id', how='left')
-    
     promo_stats.to_sql("fact_promo_analysis", engine, if_exists="replace", index=False)
     return promo_stats
 
